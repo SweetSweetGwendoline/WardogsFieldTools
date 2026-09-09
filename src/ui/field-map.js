@@ -1,0 +1,481 @@
+"use strict";
+
+function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, storage, onPosition, initialLayoutId }) {
+    const METERS_PER_GRID_UNIT = CoordinateSystem.metersPerUnit;
+    const canvas = document.getElementById("field-map");
+    const context = canvas.getContext("2d");
+    const viewport = document.getElementById("map-viewport");
+    const selector = document.getElementById("map-select");
+    const layoutSelector = document.getElementById("layout-select");
+    const debugButton = document.getElementById("layout-debug");
+    const message = document.getElementById("map-message");
+    const cursor = document.getElementById("map-cursor");
+    const overlayButton = document.getElementById("map-overlay");
+    const gridButton = document.getElementById("map-grid");
+    const images = new Map();
+    const TILE_ZOOM = 4;
+    const TILE_COUNT = 2 ** TILE_ZOOM;
+    const MAX_ZOOM_FACTOR = 16;
+    let width = 1;
+    let height = 1;
+    let scale = 1;
+    let minimumScale = 1;
+    let center = { x: 0, y: 0 };
+    let drag = null;
+    let framePending = false;
+
+    function hasPosition(point) {
+        return point && Number.isFinite(point.x) && Number.isFinite(point.y);
+    }
+
+    function hasZone(zone) {
+        return hasPosition(zone) && Number.isFinite(zone.radiusMeters) && zone.radiusMeters > 0;
+    }
+
+    function populateLayouts() {
+        const layouts = layoutRegistry[state.map.id] || [];
+        const locked = debugGate && !state.debugEnabled;
+        const savedId = initialLayoutId || storage.getLayout(state.map.id);
+        initialLayoutId = null;
+        state.layout = (locked
+            ? layouts.find((layout) => layout.id === "layout-1")
+            : layouts.find((layout) => layout.id === savedId)) || layouts[0] || null;
+        layoutSelector.replaceChildren();
+        for (const layout of layouts) {
+            const option = document.createElement("option");
+            option.value = layout.id;
+            option.textContent = layout.name;
+            layoutSelector.append(option);
+        }
+        layoutSelector.disabled = locked || layouts.length === 0;
+        layoutSelector.value = state.layout?.id || "";
+        layoutSelector.title = "Playable layout";
+        updateOverlayButton();
+    }
+
+    function toScreen(x, y) {
+        return { x: width / 2 + (x - center.x) * scale, y: height / 2 - (y - center.y) * scale };
+    }
+
+    function toGrid(x, y) {
+        return { x: center.x + (x - width / 2) / scale, y: center.y - (y - height / 2) / scale };
+    }
+
+    function scheduleDraw() {
+        if (!framePending) {
+            framePending = true;
+            requestAnimationFrame(() => {
+                framePending = false;
+                draw();
+            });
+        }
+    }
+
+    function getImage(path) {
+        if (!images.has(path)) {
+            const image = new Image();
+            const entry = { image, loaded: false, failed: false };
+            images.set(path, entry);
+            image.onload = () => {
+                entry.loaded = true;
+                scheduleDraw();
+            };
+            image.onerror = () => {
+                entry.failed = true;
+                scheduleDraw();
+            };
+            image.src = path;
+        }
+        return images.get(path);
+    }
+
+    function fitMap() {
+        const bounds = state.map.bounds;
+        minimumScale = Math.min(width / (bounds.maxX - bounds.minX), height / (bounds.maxY - bounds.minY)) * 0.95;
+        scale = minimumScale;
+        center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+        scheduleDraw();
+    }
+
+    function zoom(factor, x = width / 2, y = height / 2) {
+        const anchor = toGrid(x, y);
+        scale = Math.max(minimumScale, Math.min(minimumScale * MAX_ZOOM_FACTOR, scale * factor));
+        center.x = anchor.x - (x - width / 2) / scale;
+        center.y = anchor.y + (y - height / 2) / scale;
+        scheduleDraw();
+    }
+
+    function drawMarker(position, color) {
+        if (!position.every(Number.isFinite)) {
+            return;
+        }
+        const point = toScreen(...position);
+        context.beginPath();
+        context.arc(point.x, point.y, 6, 0, Math.PI * 2);
+        context.fillStyle = color;
+        context.fill();
+        context.strokeStyle = "#101923";
+        context.lineWidth = 2;
+        context.stroke();
+    }
+
+    function drawGrid() {
+        if (!state.gridVisible) return;
+
+        const bounds = state.map.bounds;
+        const visibleTopLeft = toGrid(0, 0);
+        const visibleBottomRight = toGrid(width, height);
+        const left = Math.max(bounds.minX, visibleTopLeft.x);
+        const right = Math.min(bounds.maxX, visibleBottomRight.x);
+        const bottom = Math.max(bounds.minY, visibleBottomRight.y);
+        const top = Math.min(bounds.maxY, visibleTopLeft.y);
+
+        if (left >= right || bottom >= top) {
+            return;
+        }
+
+        // Grid spacing: 100 m squares, with major lines every 1 km.
+        const lineStep = 1;
+        const majorStep = 10;
+        const labelStep = Math.max(1, Math.ceil(65 / (majorStep * scale))) * majorStep;
+        const screenLeft = toScreen(left, top).x;
+        const screenTop = toScreen(left, top).y;
+        const screenRight = toScreen(right, bottom).x;
+        const screenBottom = toScreen(right, bottom).y;
+
+        context.save();
+        context.font = "11px Arial";
+        context.textBaseline = "top";
+        context.fillStyle = "#d4e3ed";
+
+        function drawLabel(text, x, y, align = "left", baseline = "top") {
+            context.textAlign = align;
+            context.textBaseline = baseline;
+            context.strokeStyle = "#111b24";
+            context.lineWidth = 3;
+            context.strokeText(text, x, y);
+            context.fillText(text, x, y);
+        }
+
+        for (let x = Math.ceil(left / lineStep) * lineStep; x <= right; x += lineStep) {
+            const screenX = toScreen(x, top).x;
+            const isMajor = x % majorStep === 0;
+            context.strokeStyle = isMajor ? "#c1d8e452" : "#c1d8e422";
+            context.lineWidth = 1;
+            context.beginPath();
+            context.moveTo(screenX, screenTop);
+            context.lineTo(screenX, screenBottom);
+            context.stroke();
+            if (x % labelStep === 0 && screenX > screenLeft + 40 && screenX < screenRight - 45) {
+                drawLabel(`X ${x}`, screenX + 4, screenTop + 6);
+                drawLabel(`X ${x}`, screenX + 4, screenBottom - 6, "left", "bottom");
+            }
+        }
+
+        for (let y = Math.ceil(bottom / lineStep) * lineStep; y <= top; y += lineStep) {
+            const screenY = toScreen(left, y).y;
+            const isMajor = y % majorStep === 0;
+            context.strokeStyle = isMajor ? "#c1d8e452" : "#c1d8e422";
+            context.lineWidth = 1;
+            context.beginPath();
+            context.moveTo(screenLeft, screenY);
+            context.lineTo(screenRight, screenY);
+            context.stroke();
+            if (y % labelStep === 0 && screenY > screenTop + 25 && screenY < screenBottom - 20) {
+                drawLabel(`Y ${y}`, screenLeft + 6, screenY + 4);
+                drawLabel(`Y ${y}`, screenRight - 6, screenY + 4, "right");
+            }
+        }
+
+        context.restore();
+    }
+
+    function drawTerrain() {
+        const bounds = state.map.bounds;
+        const tileBounds = state.map.tileBounds;
+        const topLeft = toScreen(bounds.minX, bounds.maxY);
+        context.save();
+        context.beginPath();
+        context.rect(topLeft.x, topLeft.y, (bounds.maxX - bounds.minX) * scale, (bounds.maxY - bounds.minY) * scale);
+        context.clip();
+        const imageOrigin = toScreen(tileBounds.minX, tileBounds.maxY);
+        const imageWidth = (tileBounds.maxX - tileBounds.minX) * scale;
+        const imageHeight = (tileBounds.maxY - tileBounds.minY) * scale;
+        const tileWidth = imageWidth / TILE_COUNT;
+        const tileHeight = imageHeight / TILE_COUNT;
+        const overview = getImage(`assets/maps/${state.map.id}/overview.webp`);
+        if (overview.loaded) {
+            context.drawImage(overview.image, imageOrigin.x, imageOrigin.y, imageWidth, imageHeight);
+        }
+
+        let failedTiles = false;
+        for (let x = 0; x < TILE_COUNT; x += 1) {
+            for (let y = 0; y < TILE_COUNT; y += 1) {
+                const left = imageOrigin.x + x * tileWidth;
+                const top = imageOrigin.y + y * tileHeight;
+                if (left > width || top > height || left + tileWidth < 0 || top + tileHeight < 0) {
+                    continue;
+                }
+                const tile = getImage(`assets/maps/${state.map.id}/zoom_${TILE_ZOOM}/${x}_${y}.webp`);
+                failedTiles ||= tile.failed;
+                if (tile.loaded) {
+                    context.drawImage(tile.image, left, top, tileWidth + 0.5, tileHeight + 0.5);
+                }
+            }
+        }
+        context.restore();
+        message.textContent = overview.failed ? "Map image unavailable" : failedTiles ? "Some detail tiles are unavailable" : "Loading map…";
+        message.hidden = overview.loaded && !failedTiles;
+    }
+
+    function drawPositions() {
+        const firing = state.firing;
+        const target = state.target;
+        if (firing.every(Number.isFinite)) {
+            const origin = toScreen(...firing);
+            const weapon = state.weapon;
+            context.save();
+            context.strokeStyle = "#66c0f4";
+            context.lineWidth = 2;
+            for (const [range, dashed] of [[weapon.maximumRange, false], [weapon.minimumRange, true]]) {
+                context.setLineDash(dashed ? [6, 5] : []);
+                context.beginPath();
+                context.arc(origin.x, origin.y, range / METERS_PER_GRID_UNIT * scale, 0, Math.PI * 2);
+                context.stroke();
+            }
+            context.setLineDash([4, 4]);
+            if (target.every(Number.isFinite)) {
+                const endpoint = toScreen(...target);
+                context.strokeStyle = "#dbe8ee";
+                context.beginPath();
+                context.moveTo(origin.x, origin.y);
+                context.lineTo(endpoint.x, endpoint.y);
+                context.stroke();
+            }
+            context.restore();
+        }
+        drawMarker(firing, "#66c0f4");
+        drawMarker(target, "#b7d977");
+    }
+
+    function drawControlZone() {
+        const zone = state.layout?.controlZone;
+        if (!state.overlaysVisible || !hasZone(zone)) {
+            return;
+        }
+
+        const point = toScreen(zone.x, zone.y);
+        context.save();
+        context.beginPath();
+        context.arc(point.x, point.y, zone.radiusMeters / METERS_PER_GRID_UNIT * scale, 0, Math.PI * 2);
+        context.fillStyle = "rgba(135, 190, 130, 0.045)";
+        context.strokeStyle = "rgba(150, 205, 145, 0.45)";
+        context.lineWidth = 1;
+        context.setLineDash([]);
+        context.fill();
+        context.stroke();
+        context.restore();
+    }
+
+    function drawTowers() {
+        if (!state.overlaysVisible) {
+            return;
+        }
+        context.save();
+        context.font = "11px Arial";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.lineWidth = 1;
+
+        for (const tower of state.layout?.towers || []) {
+            if (!hasPosition(tower)) {
+                continue;
+            }
+            const point = toScreen(tower.x, tower.y);
+            if (point.x < -20 || point.x > width + 20 || point.y < -20 || point.y > height + 20) {
+                continue;
+            }
+
+            // Compact neutral markers keep terrain and firing markers readable.
+            context.fillStyle = "rgba(19, 31, 43, 0.85)";
+            context.strokeStyle = "rgba(180, 196, 205, 0.65)";
+            context.fillRect(point.x - 8, point.y - 8, 16, 16);
+            context.strokeRect(point.x - 8, point.y - 8, 16, 16);
+            context.fillStyle = "#bdccd4";
+            context.fillText(String(tower.number), point.x, point.y);
+        }
+
+        context.restore();
+    }
+
+    function drawSpawns() {
+        if (!state.overlaysVisible) {
+            return;
+        }
+        context.save();
+        context.font = "10px Arial";
+        context.textAlign = "center";
+        context.textBaseline = "top";
+        for (const spawn of state.layout?.spawns || []) {
+            if (!hasPosition(spawn)) {
+                continue;
+            }
+            const point = toScreen(spawn.x, spawn.y);
+            if (point.x < -80 || point.x > width + 80 || point.y < -30 || point.y > height + 30) {
+                continue;
+            }
+            context.beginPath();
+            context.moveTo(point.x, point.y - 7);
+            context.lineTo(point.x + 7, point.y + 6);
+            context.lineTo(point.x - 7, point.y + 6);
+            context.closePath();
+            context.fillStyle = "rgba(19, 31, 43, 0.85)";
+            context.fill();
+            context.strokeStyle = "#c8b7dc";
+            context.lineWidth = 1;
+            context.stroke();
+            context.strokeStyle = "#131f2b";
+            context.lineWidth = 3;
+            context.strokeText(spawn.name, point.x, point.y + 10);
+            context.fillStyle = "#c8b7dc";
+            context.fillText(spawn.name, point.x, point.y + 10);
+        }
+        context.restore();
+    }
+
+    function updateGridButton() {
+        gridButton.setAttribute("aria-pressed", String(state.gridVisible));
+        gridButton.title = state.gridVisible
+            ? "Hide grid and edge coordinates"
+            : "Show grid and edge coordinates";
+    }
+
+    function updateOverlayButton() {
+        const available = Boolean(hasZone(state.layout?.controlZone)
+            || state.layout?.towers?.some(hasPosition)
+            || state.layout?.spawns?.some(hasPosition));
+        overlayButton.disabled = !available;
+        overlayButton.setAttribute("aria-pressed", String(available && state.overlaysVisible));
+        overlayButton.title = !available ? "No overlay positions configured for this layout"
+            : state.overlaysVisible ? "Hide towers, spawns and zone" : "Show towers, spawns and zone";
+    }
+
+    function draw() {
+        const pixelRatio = window.devicePixelRatio || 1;
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        context.clearRect(0, 0, width, height);
+        context.fillStyle = "#111b24";
+        context.fillRect(0, 0, width, height);
+        drawTerrain();
+        drawControlZone();
+        drawGrid();
+        drawTowers();
+        drawSpawns();
+        drawPositions();
+    }
+
+    function formatMapCoordinate(value) {
+        return value.toFixed(2).replace(".", ",");
+    }
+
+    function pointerPosition(event) {
+        const rectangle = canvas.getBoundingClientRect();
+        return { x: event.clientX - rectangle.left, y: event.clientY - rectangle.top };
+    }
+
+    function setPosition(event, position) {
+        const screen = pointerPosition(event);
+        const point = toGrid(screen.x, screen.y);
+        const bounds = state.map.bounds;
+        if (point.x < bounds.minX || point.x > bounds.maxX || point.y < bounds.minY || point.y > bounds.maxY) {
+            return;
+        }
+        onPosition(position, point);
+    }
+
+    canvas.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+    });
+    canvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const point = pointerPosition(event);
+        zoom(Math.exp(-event.deltaY * 0.0015), point.x, point.y);
+    }, { passive: false });
+    canvas.addEventListener("pointerdown", (event) => {
+        if (event.button === 0) {
+            setPosition(event, event.shiftKey ? "firing" : "target");
+            return;
+        }
+        if (event.button !== 2) {
+            return;
+        }
+        event.preventDefault();
+        drag = { x: event.clientX, y: event.clientY, center: { ...center } };
+        canvas.setPointerCapture(event.pointerId);
+        canvas.classList.add("dragging");
+    });
+    canvas.addEventListener("pointermove", (event) => {
+        if (drag) {
+            center.x = drag.center.x - (event.clientX - drag.x) / scale;
+            center.y = drag.center.y + (event.clientY - drag.y) / scale;
+            scheduleDraw();
+        }
+        const screen = pointerPosition(event);
+        const point = toGrid(screen.x, screen.y);
+        cursor.textContent = `X ${formatMapCoordinate(point.x)} / Y ${formatMapCoordinate(point.y)}`;
+    });
+    const endDrag = () => {
+        drag = null;
+        canvas.classList.remove("dragging");
+    };
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("lostpointercapture", endDrag);
+    selector.addEventListener("change", () => {
+        state.map = maps.find((map) => map.id === selector.value);
+        storage.setMap(state.map.id);
+        populateLayouts();
+        fitMap();
+    });
+    layoutSelector.addEventListener("change", () => {
+        if (debugGate && !state.debugEnabled) {
+            populateLayouts();
+            return;
+        }
+        state.layout = layoutRegistry[state.map.id]?.find((layout) => layout.id === layoutSelector.value) || null;
+        storage.setLayout(state.map.id, state.layout?.id || "");
+        updateOverlayButton();
+        scheduleDraw();
+    });
+    debugButton.hidden = !debugGate;
+    debugButton.addEventListener("click", () => {
+        state.debugEnabled = !state.debugEnabled;
+        debugButton.setAttribute("aria-pressed", String(state.debugEnabled));
+        populateLayouts();
+        scheduleDraw();
+    });
+    gridButton.addEventListener("click", () => {
+        state.gridVisible = !state.gridVisible;
+        updateGridButton();
+        scheduleDraw();
+    });
+    overlayButton.addEventListener("click", () => {
+        state.overlaysVisible = !state.overlaysVisible;
+        updateOverlayButton();
+        scheduleDraw();
+    });
+    document.getElementById("map-fit").addEventListener("click", fitMap);
+    document.getElementById("map-zoom-in").addEventListener("click", () => zoom(1.5));
+    document.getElementById("map-zoom-out").addEventListener("click", () => zoom(1 / 1.5));
+    selector.value = state.map.id;
+    updateGridButton();
+    populateLayouts();
+    new ResizeObserver(() => {
+        width = Math.max(1, viewport.clientWidth);
+        height = Math.max(1, viewport.clientHeight);
+        canvas.width = Math.round(width * (window.devicePixelRatio || 1));
+        canvas.height = Math.round(height * (window.devicePixelRatio || 1));
+        fitMap();
+    }).observe(viewport);
+    return { render: scheduleDraw };
+}

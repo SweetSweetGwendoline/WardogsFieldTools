@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>WARDOGS · Fire calculator</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="assets/styles.css">
+    <script src="src/domain/coordinate-system.js" defer></script>
+    <script src="data/elevation-tables.js" defer></script>
+    <script src="src/domain/calculator.js" defer></script>
+    <script src="data/maps.js" defer></script>
+    <script src="config/layouts.js" defer></script>
+    <script src="config/layouts/bakurani.js" defer></script>
+    <script src="config/layouts/ozeti.js" defer></script>
+    <script src="config/layouts/zestafona.js" defer></script>
+    <script src="src/infrastructure/layout-io.js" defer></script>
+    <script src="src/infrastructure/storage.js" defer></script>
+    <script src="src/infrastructure/solution-link.js" defer></script>
+    <script src="src/ui/calculator-ui.js" defer></script>
+    <script src="src/ui/field-map.js" defer></script>
+    <script src="src/app.js" defer></script>
+</head>
+<body>
+    <main class="app">
+        <header class="page-header">
+            <div class="wordmark">
+                WARDOGS <span>FIELD TOOLS</span>
+            </div>
+        </header>
+
+        <section class="intro" aria-labelledby="page-title">
+            <p class="eyebrow">WARDOGS</p>
+            <h1 id="page-title">ARTILLERY CALCULATOR</h1>
+        </section>
+
+        <div class="calculator">
+            <form id="coordinate-form" class="input-panel" autocomplete="off">
+                <label for="weapon">Weapon system</label>
+                <select id="weapon" name="weapon">
+                    <option value="l81">L81 Mortar</option>
+                    <option value="sph2">SPH-2 Artillery</option>
+                </select>
+
+                <fieldset>
+                    <legend>
+                        <span><span class="position-dot firing-dot"></span> FIRING POSITION</span>
+                        <button
+                            class="copy-position"
+                            type="button"
+                            data-position="firing"
+                            aria-label="Copy firing position"
+                            title="Copy firing position"
+                            disabled
+                        >⧉</button>
+                    </legend>
+                    <div class="coordinate-pair">
+                        <div>
+                            <label for="firing-x">X coordinate</label>
+                            <input id="firing-x" name="firing-x" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
+                        </div>
+                        <div>
+                            <label for="firing-y">Y coordinate</label>
+                            <input id="firing-y" name="firing-y" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>
+                        <span><span class="position-dot target-dot"></span> TARGET POSITION</span>
+                        <button
+                            class="copy-position"
+                            type="button"
+                            data-position="target"
+                            aria-label="Copy target position"
+                            title="Copy target position"
+                            disabled
+                        >⧉</button>
+                    </legend>
+                    <div class="coordinate-pair">
+                        <div>
+                            <label for="target-x">X coordinate</label>
+                            <input id="target-x" name="target-x" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
+                        </div>
+                        <div>
+                            <label for="target-y">Y coordinate</label>
+                            <input id="target-y" name="target-y" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
+                        </div>
+                    </div>
+                </fieldset>
+            </form>
+
+            <section class="result-panel" aria-labelledby="solution-title" aria-live="polite" aria-atomic="true">
+                <div class="panel-heading">
+                    <h2 id="solution-title">L81 firing solution</h2>
+                    <button id="copy-link" class="copy-link" type="button" aria-label="Copy solution link" title="Copy solution link" disabled hidden>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                            <path d="M12 15V3m-4 4 4-4 4 4M7 11H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="status-banner" class="status-banner" data-state="idle">
+                    <span class="status-dot"></span>
+                    <div>
+                        <strong id="status-title">Awaiting coordinates</strong>
+                        <p id="status-detail" hidden></p>
+                    </div>
+                </div>
+
+                <div class="metrics">
+                    <div class="metric">
+                        <h3>Range</h3>
+                        <p class="metric-value"><span id="range-result">—</span><small class="meter-unit">m</small></p>
+                    </div>
+                    <div class="metric">
+                        <h3>Bearing</h3>
+                        <p class="metric-value"><span id="bearing-result">—</span><small>°</small></p>
+                    </div>
+                    <div class="metric">
+                        <div>
+                            <h3>Elevation</h3>
+                            <div id="elevation-arc" class="arc-label" hidden></div>
+                        </div>
+                        <p class="metric-value"><span id="elevation-result">—</span><small>mil</small></p>
+                    </div>
+                    <div id="high-elevation-row" class="metric" hidden>
+                        <div>
+                            <h3>Elevation</h3>
+                            <div class="arc-label">HIGH ARC</div>
+                        </div>
+                        <p class="metric-value"><span id="high-elevation-result">—</span><small>mil</small></p>
+                    </div>
+                    <div class="metric">
+                        <h3>Direction</h3>
+                        <p class="metric-value"><span id="direction-result">—</span></p>
+                    </div>
+                    <div class="metric supporting-metric">
+                        <h3 title="Delta easting — east/west target offset">ΔE</h3>
+                        <p class="metric-value"><span id="horizontal-offset">—</span><small class="meter-unit">m</small><span class="offset-direction" id="horizontal-direction"></span></p>
+                    </div>
+                    <div class="metric supporting-metric">
+                        <h3 title="Delta northing — north/south target offset">ΔN</h3>
+                        <p class="metric-value"><span id="vertical-offset">—</span><small class="meter-unit">m</small><span class="offset-direction" id="vertical-direction"></span></p>
+                    </div>
+                </div>
+            </section>
+            <section class="map-panel" aria-label="Firing map">
+                <div class="map-toolbar">
+                    <div class="map-selectors">
+                        <select id="map-select" aria-label="Map">
+                            <option value="bakurani">Bakurani</option>
+                            <option value="ozeti">Ozeti</option>
+                            <option value="zestafona">Zestafona</option>
+                        </select>
+                        <select id="layout-select" aria-label="Playable layout" disabled></select>
+                    </div>
+                    <div class="map-controls">
+                        <button id="layout-debug" type="button" aria-label="Debug" aria-pressed="false" title="Temporarily unlock layout selection">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="m9 3 1 3m5-3-1 3M7 10 4 7m3 7H3m4 4-3 3m13-11 3-3m-3 7h4m-4 4 3 3" />
+                                <rect x="7" y="6" width="10" height="15" rx="5" />
+                                <path d="M7 11h10m-5 0v10" />
+                            </svg>
+                        </button>
+                        <button id="map-grid" type="button" aria-label="Grid" title="Hide grid and edge coordinates" aria-pressed="true">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+                                <rect x="1.5" y="1.5" width="12" height="12" />
+                                <path d="M5.5 1.5v12M9.5 1.5v12M1.5 5.5h12M1.5 9.5h12" />
+                            </svg>
+                        </button>
+                        <button id="map-overlay" type="button" aria-label="Overlay" title="Hide towers, spawns and zone" aria-pressed="true">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="m12 3 10 5-10 5L2 8Z M2 12l10 5 10-5 M2 16l10 5 10-5" />
+                            </svg>
+                        </button>
+                        <button id="map-zoom-out" type="button" aria-label="Zoom out">−</button>
+                        <button id="map-zoom-in" type="button" aria-label="Zoom in">+</button>
+                        <button id="map-fit" type="button" aria-label="Fit map" title="Fit map">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M9 9 4 4m0 5V4h5m6 5 5-5m-5 0h5v5M9 15l-5 5m0-5v5h5m6-5 5 5m-5 0h5v-5" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="map-viewport">
+                    <canvas id="field-map" aria-label="Map with firing and target positions. Left-click to set target; shift-click to set firing position; right-button drag to pan."></canvas>
+                    <span id="map-message" role="status">Loading map…</span>
+                </div>
+                <div class="map-footer">
+                    <div class="map-footer-info">
+                        <div class="map-shortcuts">
+                            <span class="map-shortcut" title="Hold Shift and left-click to set the firing position" aria-label="Shift and left-click: firing">
+                                <svg viewBox="0 0 44 24" aria-hidden="true">
+                                    <rect x="1" y="3" width="20" height="18" rx="3"/>
+                                    <path d="m11 7-5 5h3v5h4v-5h3z"/>
+                                    <path class="mouse-button" d="M35 3h-1a6 6 0 0 0-6 6v2h7z"/>
+                                    <rect x="28" y="3" width="14" height="18" rx="6"/>
+                                    <path d="M28 11h14M35 3v8"/>
+                                </svg>
+                                FIRING
+                            </span>
+                            <span class="map-shortcut" title="Left-click to set the target position" aria-label="Left-click: target">
+                                <svg viewBox="0 0 20 24" aria-hidden="true">
+                                    <path class="mouse-button" d="M10 3H9a6 6 0 0 0-6 6v2h7z"/>
+                                    <rect x="3" y="3" width="14" height="18" rx="6"/>
+                                    <path d="M3 11h14M10 3v8"/>
+                                </svg>
+                                TARGET
+                            </span>
+                            <span class="map-shortcut" title="Hold the right mouse button and drag to pan" aria-label="Right-button drag: pan">
+                                <svg viewBox="0 0 32 24" aria-hidden="true">
+                                    <path class="mouse-button" d="M10 3h1a6 6 0 0 1 6 6v2h-7z"/>
+                                    <rect x="3" y="3" width="14" height="18" rx="6"/>
+                                    <path d="M3 11h14M10 3v8M21 12h9m-3-3 3 3-3 3m-3-6-3 3 3 3"/>
+                                </svg>
+                                PAN
+                            </span>
+                            <span class="map-shortcut" title="Scroll the mouse wheel to zoom" aria-label="Scroll wheel: zoom">
+                                <svg viewBox="0 0 20 24" aria-hidden="true">
+                                    <rect x="3" y="3" width="14" height="18" rx="6"/>
+                                    <rect class="mouse-button" x="9" y="6" width="2" height="6" rx="1"/>
+                                </svg>
+                                ZOOM
+                            </span>
+                        </div>
+                        <div class="map-key">
+                            <span class="firing-key">● FIRING</span>
+                            <span class="target-key">● TARGET</span>
+                            <span class="zone-key">○ ZONE</span>
+                            <span class="spawn-key">△ SPAWN</span>
+                            <span class="tower-key">□ TOWER</span>
+                        </div>
+                    </div>
+                    <span id="map-cursor">X — / Y —</span>
+                </div>
+            </section>
+        </div>
+    </main>
+</body>
+</html>
