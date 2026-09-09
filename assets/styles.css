@@ -51,10 +51,6 @@
     color: #b7d9ad;
 }
 
-.map-key .spawn-key {
-    color: #c8b7dc;
-}
-
 .map-controls {
     display: flex;
     gap: 6px;
@@ -107,8 +103,12 @@
     display: block;
     width: 100%;
     height: 100%;
-    cursor: crosshair;
+    cursor: default;
     touch-action: none;
+}
+
+#field-map[data-pointer-on-image="true"] {
+    cursor: none;
 }
 
 #field-map.dragging {
@@ -186,20 +186,12 @@
     stroke: none;
 }
 
-.map-key .firing-key {
+.map-key .source-key {
     color: var(--accent);
 }
 
 .map-key .target-key {
     color: #b7d977;
-}
-
-.map-key .tower-key {
-    color: #bdccd4;
-}
-
-.map-key .zone-key {
-    color: #96cd91;
 }
 
 * {
@@ -426,7 +418,7 @@ legend {
     border-radius: 50%;
 }
 
-.firing-dot {
+.source-dot {
     background: var(--accent);
 }
 

@@ -7,7 +7,7 @@
     const linked = SolutionLink.parse(window.location.hash, FIELD_MAPS, FIELD_MAP_LAYOUTS, Calculator.weapons);
     const state = {
         inputs: null,
-        firing: [null, null],
+        source: [null, null],
         target: [null, null],
         weapon: Calculator.weapons.l81,
         solution: null,
@@ -24,7 +24,7 @@
             mapId: state.map.id,
             layoutId: state.layout?.id,
             weapon: state.inputs.weapon,
-            coordinates: [...state.firing, ...state.target],
+            coordinates: [...state.source, ...state.target],
         }),
     });
     const saved = linked?.inputs || storage.getInputs();
@@ -38,10 +38,10 @@
     function update(inputs, persist = false) {
         state.inputs = inputs;
         const coordinates = inputs.coordinates.map(Calculator.parseCoordinate);
-        state.firing = coordinates.slice(0, 2);
+        state.source = coordinates.slice(0, 2);
         state.target = coordinates.slice(2, 4);
         state.weapon = Calculator.weapons[inputs.weapon];
-        state.solution = Calculator.calculate({ firing: state.firing, target: state.target, weaponId: inputs.weapon });
+        state.solution = Calculator.calculate({ source: state.source, target: state.target, weaponId: inputs.weapon });
         if (persist) storage.setInputs(inputs);
         ui.render(state.solution, inputs.weapon);
         mapView?.render();
@@ -62,5 +62,6 @@
         storage,
         onPosition: ui.setPosition,
         initialLayoutId: linked?.layoutId,
+        appearance: { cursor: CURSOR_APPEARANCE, overlays: OVERLAY_APPEARANCE },
     });
 })();

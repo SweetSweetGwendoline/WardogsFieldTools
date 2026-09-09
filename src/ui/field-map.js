@@ -1,6 +1,13 @@
 "use strict";
 
-function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, storage, onPosition, initialLayoutId }) {
+function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, storage, onPosition, initialLayoutId, appearance }) {
+    MapSymbols.validate(appearance);
+    const { cursor: cursorStyle, overlays } = appearance;
+    for (const kind of ["zone", "tower", "spawn"]) {
+        const legend = document.getElementById(`${kind}-key`);
+        legend.style.color = overlays[kind].color;
+        legend.textContent = `${MapSymbols.glyphs[overlays[kind].shape || "circle"]} ${kind.toUpperCase()}`;
+    }
     const METERS_PER_GRID_UNIT = CoordinateSystem.metersPerUnit;
     const canvas = document.getElementById("field-map");
     const context = canvas.getContext("2d");
@@ -23,6 +30,16 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
     let center = { x: 0, y: 0 };
     let drag = null;
     let framePending = false;
+    let pointer = null;
+    let sourceModifier = false;
+
+    function updateSourceModifier(event) {
+        const active = Boolean(event.shiftKey || event.ctrlKey);
+        if (active !== sourceModifier) {
+            sourceModifier = active;
+            scheduleDraw();
+        }
+    }
 
     function hasPosition(point) {
         return point && Number.isFinite(point.x) && Number.isFinite(point.y);
@@ -229,10 +246,10 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
     }
 
     function drawPositions() {
-        const firing = state.firing;
+        const source = state.source;
         const target = state.target;
-        if (firing.every(Number.isFinite)) {
-            const origin = toScreen(...firing);
+        if (source.every(Number.isFinite)) {
+            const origin = toScreen(...source);
             const weapon = state.weapon;
             context.save();
             context.strokeStyle = "#66c0f4";
@@ -254,7 +271,7 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
             }
             context.restore();
         }
-        drawMarker(firing, "#66c0f4");
+        drawMarker(source, "#66c0f4");
         drawMarker(target, "#b7d977");
     }
 
@@ -268,11 +285,13 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
         context.save();
         context.beginPath();
         context.arc(point.x, point.y, zone.radiusMeters / METERS_PER_GRID_UNIT * scale, 0, Math.PI * 2);
-        context.fillStyle = "rgba(135, 190, 130, 0.045)";
-        context.strokeStyle = "rgba(150, 205, 145, 0.45)";
-        context.lineWidth = 1;
+        context.fillStyle = overlays.zone.color;
+        context.strokeStyle = overlays.zone.color;
+        context.lineWidth = overlays.zone.lineWidth;
         context.setLineDash([]);
+        context.globalAlpha = overlays.zone.fillOpacity;
         context.fill();
+        context.globalAlpha = overlays.zone.strokeOpacity;
         context.stroke();
         context.restore();
     }
@@ -282,7 +301,7 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
             return;
         }
         context.save();
-        context.font = "11px Arial";
+        context.font = overlays.tower.labelFont;
         context.textAlign = "center";
         context.textBaseline = "middle";
         context.lineWidth = 1;
@@ -292,16 +311,13 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
                 continue;
             }
             const point = toScreen(tower.x, tower.y);
-            if (point.x < -20 || point.x > width + 20 || point.y < -20 || point.y > height + 20) {
+            const margin = Math.max(20, overlays.tower.size);
+            if (point.x < -margin || point.x > width + margin || point.y < -margin || point.y > height + margin) {
                 continue;
             }
 
-            // Compact neutral markers keep terrain and firing markers readable.
-            context.fillStyle = "rgba(19, 31, 43, 0.85)";
-            context.strokeStyle = "rgba(180, 196, 205, 0.65)";
-            context.fillRect(point.x - 8, point.y - 8, 16, 16);
-            context.strokeRect(point.x - 8, point.y - 8, 16, 16);
-            context.fillStyle = "#bdccd4";
+            MapSymbols.marker(context, point, overlays.tower);
+            context.fillStyle = overlays.tower.color;
             context.fillText(String(tower.number), point.x, point.y);
         }
 
@@ -313,7 +329,7 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
             return;
         }
         context.save();
-        context.font = "10px Arial";
+        context.font = overlays.spawn.labelFont;
         context.textAlign = "center";
         context.textBaseline = "top";
         for (const spawn of state.layout?.spawns || []) {
@@ -321,24 +337,17 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
                 continue;
             }
             const point = toScreen(spawn.x, spawn.y);
-            if (point.x < -80 || point.x > width + 80 || point.y < -30 || point.y > height + 30) {
+            const margin = Math.max(80, overlays.spawn.size + overlays.spawn.labelOffset);
+            if (point.x < -margin || point.x > width + margin || point.y < -margin || point.y > height + margin) {
                 continue;
             }
-            context.beginPath();
-            context.moveTo(point.x, point.y - 7);
-            context.lineTo(point.x + 7, point.y + 6);
-            context.lineTo(point.x - 7, point.y + 6);
-            context.closePath();
-            context.fillStyle = "rgba(19, 31, 43, 0.85)";
-            context.fill();
-            context.strokeStyle = "#c8b7dc";
-            context.lineWidth = 1;
-            context.stroke();
-            context.strokeStyle = "#131f2b";
-            context.lineWidth = 3;
-            context.strokeText(spawn.name, point.x, point.y + 10);
-            context.fillStyle = "#c8b7dc";
-            context.fillText(spawn.name, point.x, point.y + 10);
+            MapSymbols.marker(context, point, overlays.spawn);
+            context.strokeStyle = overlays.spawn.labelOutlineColor;
+            context.lineWidth = overlays.spawn.labelOutlineWidth;
+            const labelY = point.y + overlays.spawn.labelOffset;
+            context.strokeText(spawn.name, point.x, labelY);
+            context.fillStyle = overlays.spawn.color;
+            context.fillText(spawn.name, point.x, labelY);
         }
         context.restore();
     }
@@ -360,7 +369,77 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
             : state.overlaysVisible ? "Hide towers, spawns and zone" : "Show towers, spawns and zone";
     }
 
+    function drawCursorGuides() {
+        if (drag || !pointOnImage(pointer)) return;
+        context.save();
+        context.strokeStyle = sourceModifier ? cursorStyle.sourceColor : cursorStyle.targetColor;
+        context.fillStyle = context.strokeStyle;
+        context.lineWidth = cursorStyle.center.lineWidth;
+        context.setLineDash([]);
+        MapSymbols.trace(context, cursorStyle.center.shape, pointer.x, pointer.y, cursorStyle.center.size);
+        context.stroke();
+        context.beginPath();
+        context.arc(pointer.x, pointer.y, cursorStyle.center.dotRadius, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+
+        if (!cursorStyle.guides.visible) return;
+        const bounds = state.map.bounds;
+        const topLeft = toScreen(bounds.minX, bounds.maxY);
+        const bottomRight = toScreen(bounds.maxX, bounds.minY);
+        const left = Math.max(0, topLeft.x);
+        const right = Math.min(width, bottomRight.x);
+        const top = Math.max(0, topLeft.y);
+        const bottom = Math.min(height, bottomRight.y);
+        if (pointer.x < left || pointer.x > right || pointer.y < top || pointer.y > bottom) return;
+
+        // Leave a small gap around the configured cursor shape.
+        const gap = Math.max(cursorStyle.guides.gap, cursorStyle.center.size / 2);
+        context.save();
+        context.strokeStyle = sourceModifier ? cursorStyle.sourceColor : cursorStyle.targetColor;
+        context.globalAlpha = cursorStyle.guides.opacity;
+        context.lineWidth = cursorStyle.guides.lineWidth;
+        context.setLineDash([]);
+        context.beginPath();
+        context.moveTo(left, pointer.y);
+        context.lineTo(Math.max(left, pointer.x - gap), pointer.y);
+        context.moveTo(Math.min(right, pointer.x + gap), pointer.y);
+        context.lineTo(right, pointer.y);
+        context.moveTo(pointer.x, top);
+        context.lineTo(pointer.x, Math.max(top, pointer.y - gap));
+        context.moveTo(pointer.x, Math.min(bottom, pointer.y + gap));
+        context.lineTo(pointer.x, bottom);
+        context.stroke();
+        context.restore();
+    }
+
+    function pointOnImage(screen) {
+        const point = screen ? toGrid(screen.x, screen.y) : null;
+        const bounds = state.map.bounds;
+        const inside = point && screen.x >= 0 && screen.x <= width
+            && screen.y >= 0 && screen.y <= height
+            && point.x >= bounds.minX && point.x <= bounds.maxX
+            && point.y >= bounds.minY && point.y <= bounds.maxY;
+        return inside ? point : null;
+    }
+
+    function updateCursorReadout() {
+        const point = pointOnImage(pointer);
+        const visible = point !== null;
+        canvas.dataset.pointerOnImage = String(visible);
+        cursor.textContent = visible
+            ? `X ${formatMapCoordinate(point.x)} / Y ${formatMapCoordinate(point.y)}`
+            : "X — / Y —";
+    }
+
+    function clearPointer() {
+        pointer = null;
+        updateCursorReadout();
+        scheduleDraw();
+    }
+
     function draw() {
+        updateCursorReadout();
         const pixelRatio = window.devicePixelRatio || 1;
         context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
         context.clearRect(0, 0, width, height);
@@ -372,10 +451,11 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
         drawTowers();
         drawSpawns();
         drawPositions();
+        drawCursorGuides();
     }
 
     function formatMapCoordinate(value) {
-        return value.toFixed(2).replace(".", ",");
+        return value.toFixed(2);
     }
 
     function pointerPosition(event) {
@@ -384,13 +464,19 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
     }
 
     function setPosition(event, position) {
-        const screen = pointerPosition(event);
-        const point = toGrid(screen.x, screen.y);
-        const bounds = state.map.bounds;
-        if (point.x < bounds.minX || point.x > bounds.maxX || point.y < bounds.minY || point.y > bounds.maxY) {
-            return;
-        }
-        onPosition(position, point);
+        const point = pointOnImage(pointerPosition(event));
+        if (point) onPosition(position, point);
+    }
+
+    function endDrag() {
+        drag = null;
+        canvas.classList.remove("dragging");
+        scheduleDraw();
+    }
+
+    function cancelPointer() {
+        endDrag();
+        clearPointer();
     }
 
     canvas.addEventListener("contextmenu", (event) => {
@@ -402,8 +488,9 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
         zoom(Math.exp(-event.deltaY * 0.0015), point.x, point.y);
     }, { passive: false });
     canvas.addEventListener("pointerdown", (event) => {
+        updateSourceModifier(event);
         if (event.button === 0) {
-            setPosition(event, event.shiftKey ? "firing" : "target");
+            setPosition(event, sourceModifier ? "source" : "target");
             return;
         }
         if (event.button !== 2) {
@@ -413,23 +500,27 @@ function createFieldMap({ state, maps, layouts: layoutRegistry, debugGate, stora
         drag = { x: event.clientX, y: event.clientY, center: { ...center } };
         canvas.setPointerCapture(event.pointerId);
         canvas.classList.add("dragging");
+        scheduleDraw();
     });
     canvas.addEventListener("pointermove", (event) => {
+        updateSourceModifier(event);
         if (drag) {
             center.x = drag.center.x - (event.clientX - drag.x) / scale;
             center.y = drag.center.y + (event.clientY - drag.y) / scale;
-            scheduleDraw();
         }
-        const screen = pointerPosition(event);
-        const point = toGrid(screen.x, screen.y);
-        cursor.textContent = `X ${formatMapCoordinate(point.x)} / Y ${formatMapCoordinate(point.y)}`;
+        pointer = pointerPosition(event);
+        updateCursorReadout();
+        scheduleDraw();
     });
-    const endDrag = () => {
-        drag = null;
-        canvas.classList.remove("dragging");
-    };
+    canvas.addEventListener("pointerleave", clearPointer);
+    canvas.addEventListener("pointercancel", cancelPointer);
+    window.addEventListener("keydown", updateSourceModifier);
+    window.addEventListener("keyup", updateSourceModifier);
+    window.addEventListener("blur", () => {
+        sourceModifier = false;
+        cancelPointer();
+    });
     canvas.addEventListener("pointerup", endDrag);
-    canvas.addEventListener("pointercancel", endDrag);
     canvas.addEventListener("lostpointercapture", endDrag);
     selector.addEventListener("change", () => {
         state.map = maps.find((map) => map.id === selector.value);

@@ -1,6 +1,6 @@
 # WARDOGS Field Tools
 
-A lightweight artillery calculator and interactive map for WARDOGS. Set your firing and target positions to calculate range, bearing, and estimated elevation for the L81 mortar and SPH-2 artillery.
+A lightweight artillery calculator and interactive map for WARDOGS. Set your artillery and target positions to calculate range, bearing, and estimated elevation for the L81 mortar and SPH-2 artillery.
 
 ## Features
 

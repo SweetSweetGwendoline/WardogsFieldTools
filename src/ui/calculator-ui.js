@@ -3,14 +3,13 @@
 function createCalculatorUI({ onChange, getShareLink }) {
     const COPY_FEEDBACK_DURATION_MS = 1200;
     const { parseCoordinate, parseCoordinatePair } = Calculator;
-    function handleInputChange() { onChange(readInputs()); }
     const coordinateForm = document.getElementById("coordinate-form");
     const weaponSelect = document.getElementById("weapon");
-    const coordinateInputs = ["firing-x", "firing-y", "target-x", "target-y"].map(
+    const coordinateInputs = ["source-x", "source-y", "target-x", "target-y"].map(
         (id) => document.getElementById(id)
     );
     const positionInputs = {
-        firing: coordinateInputs.slice(0, 2),
+        source: coordinateInputs.slice(0, 2),
         target: coordinateInputs.slice(2, 4),
     };
     const numberFormatter = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
@@ -19,7 +18,23 @@ function createCalculatorUI({ onChange, getShareLink }) {
     const shareButton = document.getElementById("copy-link");
     const canShare = SolutionLink.supportsProtocol(window.location.protocol);
 
-    function showCopyFeedback(button, label = `Copy ${button.dataset.position} position`) {
+    function normalizeCoordinateText(value) {
+        return value.replaceAll(",", ".");
+    }
+
+    function handleInputChange() {
+        coordinateInputs.forEach(input => {
+            const normalized = normalizeCoordinateText(input.value);
+            if (normalized === input.value) return;
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            input.value = normalized;
+            if (typeof start === "number") input.setSelectionRange(start, end);
+        });
+        onChange(readInputs());
+    }
+
+    function showCopyFeedback(button, label = `Copy ${button.dataset.position === "source" ? "artillery" : "target"} position`) {
         window.clearTimeout(copyFeedbackTimers.get(button));
         button.classList.add("is-copied");
         button.removeAttribute("title");
@@ -158,26 +173,28 @@ function createCalculatorUI({ onChange, getShareLink }) {
 
     function setInputs(inputs) {
         weaponSelect.value = inputs.weapon;
-        coordinateInputs.forEach((input, index) => { input.value = inputs.coordinates[index]; });
+        coordinateInputs.forEach((input, index) => {
+            input.value = normalizeCoordinateText(inputs.coordinates[index]);
+        });
     }
 
     function setPosition(name, point) {
         const coordinates = [point.x, point.y];
         positionInputs[name].forEach((input, index) => {
-            input.value = coordinates[index].toFixed(2).replace(".", ",");
+            input.value = coordinates[index].toFixed(2);
         });
         handleInputChange();
     }
 
     function render(solution, weaponId) {
         updateCopyButtons();
-        setText("solution-title", Calculator.weapons[weaponId].name + " firing solution");
+        setText("solution-title", Calculator.weapons[weaponId].name + " SOLUTION");
         clearResults(weaponId);
         const statuses = {
             invalid: ["warning", "Check your coordinates", "Use a finite number for each X and Y coordinate."],
             incomplete: ["idle", "Awaiting coordinates"],
             overflow: ["warning", "Coordinates are too large", "Enter smaller map coordinates to calculate a valid range."],
-            coincident: ["warning", "Positions coincide", "The target is at your firing position. Bearing and elevation are undefined."],
+            coincident: ["warning", "Positions coincide", "The target is at your artillery position. Bearing and elevation are undefined."],
             "too-close": ["warning", "Target too close"],
             "too-far": ["warning", "Target too far"],
             valid: ["valid", "Target within range"],

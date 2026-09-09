@@ -60,7 +60,7 @@ coordinate and must not be used as an unknown placeholder. Editing towers
 does not automatically recalculate the zone centre.
 
 The Overlay icon toggles all three groups together. Empty layouts show no
-overlays, while firing/target positions and weapon range circles still work.
+overlays, while artillery/target positions and weapon range circles still work.
 All zone boundaries use a solid outline.
 Map changes fit the whole terrain; layout changes preserve the current view.
 

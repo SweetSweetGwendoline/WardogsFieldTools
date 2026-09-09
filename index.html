@@ -12,6 +12,8 @@
     <script src="src/domain/calculator.js" defer></script>
     <script src="data/maps.js" defer></script>
     <script src="config/layouts.js" defer></script>
+    <script src="config/cursor.js" defer></script>
+    <script src="config/overlays.js" defer></script>
     <script src="config/layouts/bakurani.js" defer></script>
     <script src="config/layouts/ozeti.js" defer></script>
     <script src="config/layouts/zestafona.js" defer></script>
@@ -19,6 +21,7 @@
     <script src="src/infrastructure/storage.js" defer></script>
     <script src="src/infrastructure/solution-link.js" defer></script>
     <script src="src/ui/calculator-ui.js" defer></script>
+    <script src="src/ui/map-symbols.js" defer></script>
     <script src="src/ui/field-map.js" defer></script>
     <script src="src/app.js" defer></script>
 </head>
@@ -45,24 +48,24 @@
 
                 <fieldset>
                     <legend>
-                        <span><span class="position-dot firing-dot"></span> FIRING POSITION</span>
+                        <span><span class="position-dot source-dot"></span> ARTILLERY POSITION</span>
                         <button
                             class="copy-position"
                             type="button"
-                            data-position="firing"
-                            aria-label="Copy firing position"
-                            title="Copy firing position"
+                            data-position="source"
+                            aria-label="Copy artillery position"
+                            title="Copy artillery position"
                             disabled
                         >⧉</button>
                     </legend>
                     <div class="coordinate-pair">
                         <div>
-                            <label for="firing-x">X coordinate</label>
-                            <input id="firing-x" name="firing-x" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
+                            <label for="source-x">X coordinate</label>
+                            <input id="source-x" name="source-x" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
                         </div>
                         <div>
-                            <label for="firing-y">Y coordinate</label>
-                            <input id="firing-y" name="firing-y" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
+                            <label for="source-y">Y coordinate</label>
+                            <input id="source-y" name="source-y" type="text" spellcheck="false" placeholder="0.00" inputmode="decimal">
                         </div>
                     </div>
                 </fieldset>
@@ -94,7 +97,7 @@
 
             <section class="result-panel" aria-labelledby="solution-title" aria-live="polite" aria-atomic="true">
                 <div class="panel-heading">
-                    <h2 id="solution-title">L81 firing solution</h2>
+                    <h2 id="solution-title">L81 SOLUTION</h2>
                     <button id="copy-link" class="copy-link" type="button" aria-label="Copy solution link" title="Copy solution link" disabled hidden>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
                             <path d="M12 15V3m-4 4 4-4 4 4M7 11H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2" stroke-linejoin="round" />
@@ -146,7 +149,7 @@
                     </div>
                 </div>
             </section>
-            <section class="map-panel" aria-label="Firing map">
+            <section class="map-panel" aria-label="Artillery map">
                 <div class="map-toolbar">
                     <div class="map-selectors">
                         <select id="map-select" aria-label="Map">
@@ -185,13 +188,13 @@
                     </div>
                 </div>
                 <div id="map-viewport">
-                    <canvas id="field-map" aria-label="Map with firing and target positions. Left-click to set target; shift-click to set firing position; right-button drag to pan."></canvas>
+                    <canvas id="field-map" aria-label="Map with artillery and target positions. Left-click to set target position; Shift or Ctrl plus left-click to set artillery position; right-button drag to pan."></canvas>
                     <span id="map-message" role="status">Loading map…</span>
                 </div>
                 <div class="map-footer">
                     <div class="map-footer-info">
                         <div class="map-shortcuts">
-                            <span class="map-shortcut" title="Hold Shift and left-click to set the firing position" aria-label="Shift and left-click: firing">
+                            <span class="map-shortcut" title="Hold Shift or Ctrl and left-click to set the artillery position" aria-label="Shift or Ctrl and left-click: artillery position">
                                 <svg viewBox="0 0 44 24" aria-hidden="true">
                                     <rect x="1" y="3" width="20" height="18" rx="3"/>
                                     <path d="m11 7-5 5h3v5h4v-5h3z"/>
@@ -199,9 +202,9 @@
                                     <rect x="28" y="3" width="14" height="18" rx="6"/>
                                     <path d="M28 11h14M35 3v8"/>
                                 </svg>
-                                FIRING
+                                ARTILLERY
                             </span>
-                            <span class="map-shortcut" title="Left-click to set the target position" aria-label="Left-click: target">
+                            <span class="map-shortcut" title="Left-click to set the target position" aria-label="Left-click: target position">
                                 <svg viewBox="0 0 20 24" aria-hidden="true">
                                     <path class="mouse-button" d="M10 3H9a6 6 0 0 0-6 6v2h7z"/>
                                     <rect x="3" y="3" width="14" height="18" rx="6"/>
@@ -226,11 +229,11 @@
                             </span>
                         </div>
                         <div class="map-key">
-                            <span class="firing-key">● FIRING</span>
+                            <span class="source-key">● ARTILLERY</span>
                             <span class="target-key">● TARGET</span>
-                            <span class="zone-key">○ ZONE</span>
-                            <span class="spawn-key">△ SPAWN</span>
-                            <span class="tower-key">□ TOWER</span>
+                            <span id="zone-key" class="zone-key">○ ZONE</span>
+                            <span id="spawn-key" class="spawn-key">△ SPAWN</span>
+                            <span id="tower-key" class="tower-key">□ TOWER</span>
                         </div>
                     </div>
                     <span id="map-cursor">X — / Y —</span>

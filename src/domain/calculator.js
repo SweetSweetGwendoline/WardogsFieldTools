@@ -95,9 +95,9 @@ const Calculator = (() => {
     }
 
     function calculateGeometry(coordinates) {
-        const [firingX, firingY, targetX, targetY] = coordinates;
-        const east = (targetX - firingX) * METERS_PER_GRID_UNIT;
-        const north = (targetY - firingY) * METERS_PER_GRID_UNIT;
+        const [sourceX, sourceY, targetX, targetY] = coordinates;
+        const east = (targetX - sourceX) * METERS_PER_GRID_UNIT;
+        const north = (targetY - sourceY) * METERS_PER_GRID_UNIT;
         const range = Math.hypot(east, north);
         const bearing = (Math.atan2(east, north) * DEGREES_PER_RADIAN + 360) % 360;
         const compassIndex = Math.round(bearing / 45) % COMPASS_DIRECTIONS.length;
@@ -105,12 +105,12 @@ const Calculator = (() => {
         return { east, north, range, bearing, direction: COMPASS_DIRECTIONS[compassIndex] };
     }
 
-    function calculate({ firing, target, weaponId }) {
+    function calculate({ source, target, weaponId }) {
         if (!Object.hasOwn(WEAPONS, weaponId)) throw new Error("Unknown weapon: " + weaponId);
-        if (!Array.isArray(firing) || firing.length !== 2 || !Array.isArray(target) || target.length !== 2) {
-            throw new TypeError("Firing and target must each contain two calculator coordinates.");
+        if (!Array.isArray(source) || source.length !== 2 || !Array.isArray(target) || target.length !== 2) {
+            throw new TypeError("Source and target must each contain two calculator coordinates.");
         }
-        const coordinates = [...firing, ...target];
+        const coordinates = [...source, ...target];
         const empty = { geometry: null, elevation: null, highElevation: null };
         if (coordinates.some(value => value !== null && !Number.isFinite(value))) return { ...empty, status: "invalid" };
         if (coordinates.some(value => value === null)) return { ...empty, status: "incomplete" };

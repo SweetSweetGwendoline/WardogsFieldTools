@@ -5,7 +5,7 @@ const SolutionLink = (() => {
     const allowLocalPreview = true;
     const supportsProtocol = protocol => ["https:", "http:"].includes(protocol)
         || (allowLocalPreview && protocol === "file:");
-    const keys = ["fx", "fy", "tx", "ty"];
+    const keys = ["sx", "sy", "tx", "ty"];
 
     function parse(hash, maps, layouts, weapons) {
         const params = new URLSearchParams(hash.replace(/^#/, ""));
